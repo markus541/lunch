@@ -7,30 +7,28 @@ import os
 import sys
 
 # --- BRUKERE ---
-USERS = \{
-    "Torbjørn":   \{"email": "torbjorn@havnevik.no",   "object_id": "383611c2-6cf0-4af0-8c29-99b74423d116"\},
-    "Gry":        \{"email": "gry@havnevik.no",        "object_id": "ec151031-16b4-48ae-8baf-4ddde3cc6720"\},
-    "Thomas":     \{"email": "thomas@havnevik.no",     "object_id": "cb7998bb-c9f0-41ac-938a-b5201992c865"\},
-    "Torgeir":    \{"email": "torgeir@havnevik.no",    "object_id": "eb3123d5-a540-4712-8d97-757a0c9853f1"\},
-    "Espen":      \{"email": "espen@havnevik.no",      "object_id": "68b34adf-7592-4920-9a72-a158ea8e8183"\},
-    "Mary Ellen": \{"email": "mary-ellen@havnevik.no", "object_id": "2d41b594-4335-4be0-9cf8-c8b2c55d03b9"\},
-    "Øyvind":     \{"email": "oyvind@havnevik.no",     "object_id": "6c9efa23-7b6d-456e-b990-a62224124962"\},
-    "Lise":       \{"email": "lise@havnevik.no",       "object_id": "cca04942-c824-4001-9143-d160a0fb1d55"\},
-    "Markus":     \{"email": "markus@havnevik.no",     "object_id": "cf201853-fb34-4307-8e00-ae93af661ffe"\},
-    "Guri":       \{"email": "guri@havnevik.no",       "object_id": "3e841680-8e19-4db4-89d3-31b39a76b786"\},
-\}
+USERS = {
+    "Torbjørn": {"email": "torbjorn@havnevik.no", "object_id": "383611c2-6cf0-4af0-8c29-99b74423d116"},
+    "Gry": {"email": "gry@havnevik.no", "object_id": "ec151031-16b4-48ae-8baf-4ddde3cc6720"},
+    "Thomas": {"email": "thomas@havnevik.no", "object_id": "cb7998bb-c9f0-41ac-938a-b5201992c865"},
+    "Torgeir": {"email": "torgeir@havnevik.no", "object_id": "eb3123d5-a540-4712-8d97-757a0c9853f1"},
+    "Espen": {"email": "espen@havnevik.no", "object_id": "68b34adf-7592-4920-9a72-a158ea8e8183"},
+    "Mary Ellen": {"email": "mary-ellen@havnevik.no", "object_id": "2d41b594-4335-4be0-9cf8-c8b2c55d03b9"},
+    "Øyvind": {"email": "oyvind@havnevik.no", "object_id": "6c9efa23-7b6d-456e-b990-a62224124962"},
+    "Lise": {"email": "lise@havnevik.no", "object_id": "cca04942-c824-4001-9143-d160a0fb1d55"},
+    "Markus": {"email": "markus@havnevik.no", "object_id": "cf201853-fb34-4307-8e00-ae93af661ffe"},
+    "Guri": {"email": "guri@havnevik.no", "object_id": "3e841680-8e19-4db4-89d3-31b39a76b786"},
+}
 
 # --- ROTASJONSLISTE ---
-# Roterer automatisk - ingen datoer eller ukenummer needed
 ROTATION = [
-    ["Torbjorn", "Gry"],
+    ["Torbjørn", "Gry"],
     ["Thomas", "Torgeir"],
     ["Espen", "Mary Ellen"],
-    ["Oyvind", "Lise"],
+    ["Øyvind", "Lise"],
     ["Markus", "Guri"],
 ]
 
-# Hvilken uke startet rotasjonen? (uke 17, 2025)
 ROTATION_START_WEEK = 17
 ROTATION_START_YEAR = 2026
 
@@ -67,7 +65,6 @@ GIPHY_SEARCH_TERMS = [
 
 def get_week_entry(offset_weeks=0):
     today = datetime.date.today() + datetime.timedelta(weeks=offset_weeks)
-    # Finn antall uker siden rotasjonen startet
     start = datetime.date.fromisocalendar(ROTATION_START_YEAR, ROTATION_START_WEEK, 1)
     weeks_since_start = (today - start).days // 7
     index = weeks_since_start % len(ROTATION)
@@ -81,12 +78,12 @@ def make_mention(name: str):
         mention_text = f"<at>{name}</at>"
         entity = {
             "type": "mention",
-            "text": f"<at>{name}</at>",
+            "text": mention_text,
             "mentioned": {"id": object_id, "name": name}
         }
         return mention_text, entity
     else:
-        return f"**{name}**", None
+        return name, None
 
 def get_giphy_gif(api_key: str):
     search_term = random.choice(GIPHY_SEARCH_TERMS)
@@ -174,6 +171,7 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
         data=data,
         headers={"Content-Type": "application/json"}
     )
+
     with urllib.request.urlopen(req) as response:
         print(f"Melding sendt! Status: {response.status}")
         print(f"Uke {week_num}: {plain_names}")
