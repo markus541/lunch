@@ -32,7 +32,7 @@ ROTATION = [
 
 # Hvilken uke startet rotasjonen? (uke 17, 2025)
 ROTATION_START_WEEK = 17
-ROTATION_START_YEAR = 2025
+ROTATION_START_YEAR = 2026
 
 # --- SITATER ---
 QUOTES = [
