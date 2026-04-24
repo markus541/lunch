@@ -121,14 +121,6 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
     names_str = " og ".join(mention_texts)
     plain_names = " og ".join(names)
 
-    facts = [
-        {"name": "Uke", "value": str(week_num)},
-        {"name": "Ansvarlige", "value": plain_names},
-    ]
-    if next_entry:
-        next_names = " og ".join(next_entry["ansvarlige"])
-        facts.append({"name": "Neste uke", "value": f"Uke {next_entry['uke']}: {next_names}"})
-
     card_body = [
         {
             "type": "TextBlock",
@@ -144,17 +136,10 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
             "spacing": "Medium"
         },
         {
-            "type": "FactSet",
-            "facts": facts,
-            "spacing": "Medium"
-        },
-        {
             "type": "TextBlock",
             "text": f"\"{quote['text']}\" - {quote['author']}",
             "wrap": True,
-            "isSubtle": True,
-            "spacing": "Medium",
-            "size": "Small"
+            "spacing": "Medium"
         },
     ]
 
