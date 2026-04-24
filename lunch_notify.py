@@ -6,6 +6,23 @@ import random
 import os
 import sys
 
+# --- BRUKERE ---
+# Fyll inn Azure AD Object ID for hver bruker.
+# Finn dem i Azure Portal → Azure Active Directory → Users → klikk bruker → "Object ID"
+# Eller spør IT-admin. E-post er kun for referanse.
+USERS = {
+    "Torbjørn": {"email": "torbjorn@havnevik.no", "object_id": ""},
+    "Gry":       {"email": "gry@havnevik.no",      "object_id": ""},
+    "Thomas":    {"email": "thomas@havnevik.no",   "object_id": ""},
+    "Torgeir":   {"email": "torgeir@havnevik.no",  "object_id": ""},
+    "Espen":     {"email": "espen@havnevik.no",    "object_id": ""},
+    "Mary Ellen":{"email": "mary-ellen@havnevik.no","object_id": ""},
+    "Øyvind":    {"email": "oyvind@havnevik.no",   "object_id": ""},
+    "Lise":      {"email": "lise@havnevik.no",     "object_id": ""},
+    "Markus":    {"email": "markus@havnevik.no",   "object_id": ""},
+    "Guri":      {"email": "guri@havnevik.no",     "object_id": ""},
+}
+
 # --- ROTASJONSLISTE ---
 ROTATION = [
     {"uke": 17, "dato": "2025-04-21", "ansvarlige": ["Torbjørn", "Gry"]},
@@ -23,7 +40,7 @@ ROTATION = [
     {"uke": 29, "dato": "2025-07-14", "ansvarlige": ["Espen", "Mary Ellen"]},
 ]
 
-# --- SITATER & ORDTAK ---
+# --- SITATER ---
 QUOTES = [
     {"text": "Man lever ikke av brød alene – men det hjelper veldig.", "author": "Ukjent vismann"},
     {"text": "Lunsj er frokosten til de som faktisk fikk sove.", "author": "Ukjent"},
@@ -37,34 +54,46 @@ QUOTES = [
     {"text": "You are what you eat, so don't be fast, cheap, easy, or fake.", "author": "Ukjent"},
     {"text": "In the end, it's not the years in your life that count, it's the lunches.", "author": "Abraham Lincoln (omtrent)"},
     {"text": "Mat som er laget med kjærlighet smaker alltid best. Mat laget av kollegaer smaker også greit.", "author": "Ukjent"},
-    {"text": "Cooking is like love – it should be entered into with abandon or not at all.", "author": "Harriet van Horne"},
-    {"text": "Først spiser vi, så gjør vi alt det andre.", "author": "Ukjent, men klok"},
     {"text": "A balanced diet is a cookie in each hand.", "author": "Barbara Johnson"},
     {"text": "I'm on a seafood diet. I see food and I eat it.", "author": "Klassiker"},
-    {"text": "Mat er kultur, helse, identitet – og den eneste unnskyldningen man trenger for å ta pause.", "author": "Ukjent"},
     {"text": "The secret ingredient is always cheese.", "author": "Enhver god kokk"},
+    {"text": "Cooking is like love – it should be entered into with abandon or not at all.", "author": "Harriet van Horne"},
+    {"text": "Først spiser vi, så gjør vi alt det andre.", "author": "Ukjent, men klok"},
+    {"text": "A good meal is a good mood.", "author": "Ukjent"},
 ]
 
 EMOJIS = ["🍕", "🥗", "🍱", "🌮", "🥪", "🍜", "🥘"]
 
-# Søkeord for absurd/random mat-GIFs på Giphy
 GIPHY_SEARCH_TERMS = [
-    "food fail",
-    "cooking disaster",
-    "pizza dance",
-    "hungry cat food",
-    "sandwich reaction",
-    "chef kiss",
-    "food explosion",
-    "eating funny",
-    "spaghetti mess",
-    "burger falling",
-    "hot dog dance",
-    "food drop",
-    "taco falling",
-    "noodles slurp",
-    "food baby",
+    "food fail", "cooking disaster", "pizza dance", "hungry cat food",
+    "chef kiss", "food explosion", "spaghetti mess", "burger falling",
+    "hot dog dance", "taco falling", "noodles slurp", "food baby",
 ]
+
+def make_mention(name: str) -> tuple[str, dict | None]:
+    """
+    Returnerer (display_tekst, mention_entity) for en bruker.
+    Hvis object_id er satt, brukes Teams @mention-format.
+    Hvis ikke, faller vi tilbake til vanlig fet tekst.
+    """
+    user = USERS.get(name, {})
+    object_id = user.get("object_id", "")
+    email = user.get("email", "")
+
+    if object_id:
+        mention_text = f"<at>{name}</at>"
+        entity = {
+            "type": "mention",
+            "text": f"<at>{name}</at>",
+            "mentioned": {
+                "id": object_id,
+                "name": name,
+            }
+        }
+        return mention_text, entity
+    else:
+        # Fallback: bare navn i fet tekst
+        return f"**{name}**", None
 
 def get_giphy_gif(api_key: str) -> str | None:
     search_term = random.choice(GIPHY_SEARCH_TERMS)
@@ -105,14 +134,27 @@ def get_next_week_entry():
 
 def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, gif_url: str = None):
     names = entry["ansvarlige"]
-    names_str = " og ".join(names)
     week_num = entry["uke"]
     emoji = EMOJIS[week_num % len(EMOJIS)]
     quote = random.choice(QUOTES)
 
+    # Bygg mentions
+    mention_texts = []
+    entities = []
+    for name in names:
+        text, entity = make_mention(name)
+        mention_texts.append(text)
+        if entity:
+            entities.append(entity)
+
+    names_str = " og ".join(mention_texts)
+
+    # Fallback-visning for FactSet (uten HTML-tags)
+    plain_names = " og ".join(names)
+
     facts = [
         {"name": "Uke", "value": str(week_num)},
-        {"name": "Ansvarlige", "value": names_str},
+        {"name": "Ansvarlige", "value": plain_names},
     ]
     if next_entry:
         next_names = " og ".join(next_entry["ansvarlige"])
@@ -128,7 +170,7 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
         },
         {
             "type": "TextBlock",
-            "text": f"Denne uken er det **{names_str}** som har ansvaret for lunsjen. Lykke til! 🙌",
+            "text": f"Denne uken er det {names_str} som har ansvaret for lunsjen. Lykke til! 🙌",
             "wrap": True,
             "spacing": "Medium"
         },
@@ -165,7 +207,8 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
                     "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
                     "type": "AdaptiveCard",
                     "version": "1.4",
-                    "body": card_body
+                    "body": card_body,
+                    **({"msteams": {"entities": entities}} if entities else {})
                 }
             }
         ]
@@ -179,7 +222,7 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
     )
     with urllib.request.urlopen(req) as response:
         print(f"✅ Melding sendt! Status: {response.status}")
-        print(f"   Uke {week_num}: {names_str}")
+        print(f"   Uke {week_num}: {plain_names}")
         print(f"   Sitat: \"{quote['text']}\"")
         if gif_url:
             print(f"   GIF: {gif_url}")
