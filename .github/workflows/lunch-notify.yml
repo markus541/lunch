@@ -2,10 +2,12 @@ name: Lunsjvarsel Teams
 
 on:
   schedule:
-    # 06:05 UTC mandag = 08:05 norsk sommertid (07:05 vintertid).
+    # 09:05 UTC mandag = 11:05 norsk sommertid (10:05 vintertid).
+    # Vi sender bevisst noen timer før lunsj slik at folk ikke får
+    # varsel midt om morgenen før de er på jobb.
     # Skjevt minutt (5) gjør at GitHub Actions er mer pålitelig
     # enn ved hele timer (de blir ofte forsinket eller droppet).
-    - cron: "5 6 * * 1"
+    - cron: "5 9 * * 1"
   workflow_dispatch:
 
 jobs:
