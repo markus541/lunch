@@ -2,13 +2,15 @@ name: Lunsjvarsel Teams
 
 on:
   schedule:
-    - cron: "0 8 * * 1"
+    # 06:05 UTC mandag = 08:05 norsk sommertid (07:05 vintertid).
+    # Skjevt minutt (5) gjør at GitHub Actions er mer pålitelig
+    # enn ved hele timer (de blir ofte forsinket eller droppet).
+    - cron: "5 6 * * 1"
   workflow_dispatch:
 
 jobs:
   send-lunch-notification:
     runs-on: ubuntu-latest
-
     steps:
       - name: Hent kildekoden
         uses: actions/checkout@v4
@@ -22,4 +24,6 @@ jobs:
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
+          USERS_JSON: ${{ secrets.USERS_JSON }}
+          ROTATION_JSON: ${{ secrets.ROTATION_JSON }}
         run: python lunch_notify.py
