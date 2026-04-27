@@ -1,33 +1,44 @@
 import datetime
 import json
-import urllib.request
-import urllib.parse
-import random
 import os
+import random
 import sys
+import urllib.parse
+import urllib.request
 
 # --- BRUKERE ---
-USERS = {
-    "Torbjørn": {"email": "torbjorn@havnevik.no", "object_id": "383611c2-6cf0-4af0-8c29-99b74423d116"},
-    "Gry": {"email": "gry@havnevik.no", "object_id": "ec151031-16b4-48ae-8baf-4ddde3cc6720"},
-    "Thomas": {"email": "thomas@havnevik.no", "object_id": "cb7998bb-c9f0-41ac-938a-b5201992c865"},
-    "Torgeir": {"email": "torgeir@havnevik.no", "object_id": "eb3123d5-a540-4712-8d97-757a0c9853f1"},
-    "Espen": {"email": "espen@havnevik.no", "object_id": "68b34adf-7592-4920-9a72-a158ea8e8183"},
-    "Mary Ellen": {"email": "mary-ellen@havnevik.no", "object_id": "2d41b594-4335-4be0-9cf8-c8b2c55d03b9"},
-    "Øyvind": {"email": "oyvind@havnevik.no", "object_id": "6c9efa23-7b6d-456e-b990-a62224124962"},
-    "Lise": {"email": "lise@havnevik.no", "object_id": "cca04942-c824-4001-9143-d160a0fb1d55"},
-    "Markus": {"email": "markus@havnevik.no", "object_id": "cf201853-fb34-4307-8e00-ae93af661ffe"},
-    "Guri": {"email": "guri@havnevik.no", "object_id": "3e841680-8e19-4db4-89d3-31b39a76b786"},
-}
+# Leses fra miljøvariabel USERS_JSON (GitHub Secret) for å unngå å eksponere
+# personopplysninger i et offentlig repo. Forventet format:
+# {
+#   "Navn": {"email": "navn@firma.no", "object_id": "<azure-ad-objekt-id>"},
+#   ...
+# }
+def load_users():
+    raw = os.environ.get("USERS_JSON")
+    if not raw:
+        print("Mangler USERS_JSON miljøvariabel")
+        sys.exit(1)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"USERS_JSON er ikke gyldig JSON: {e}")
+        sys.exit(1)
+
 
 # --- ROTASJONSLISTE ---
-ROTATION = [
-    ["Torbjørn", "Gry"],
-    ["Thomas", "Torgeir"],
-    ["Espen", "Mary Ellen"],
-    ["Øyvind", "Lise"],
-    ["Markus", "Guri"],
-]
+# Leses fra miljøvariabel ROTATION_JSON (GitHub Secret). Forventet format:
+# [["Navn1", "Navn2"], ["Navn3", "Navn4"], ...]
+def load_rotation():
+    raw = os.environ.get("ROTATION_JSON")
+    if not raw:
+        print("Mangler ROTATION_JSON miljøvariabel")
+        sys.exit(1)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        print(f"ROTATION_JSON er ikke gyldig JSON: {e}")
+        sys.exit(1)
+
 
 ROTATION_START_WEEK = 17
 ROTATION_START_YEAR = 2026
@@ -54,25 +65,24 @@ QUOTES = [
     {"text": "A good meal is a good mood.", "author": "Ukjent"},
 ]
 
-EMOJIS = ["pizza", "salat", "matboks", "taco", "sandwich", "nudler", "gryte"]
-EMOJI_CHARS = ["<3", ":)", "=)", ":]", ":D", "^_^", "o/"]
-
 GIPHY_SEARCH_TERMS = [
     "food fail", "cooking disaster", "pizza dance", "hungry cat food",
     "chef kiss", "food explosion", "spaghetti mess", "burger falling",
     "hot dog dance", "taco falling", "noodles slurp", "food baby",
 ]
 
-def get_week_entry(offset_weeks=0):
+
+def get_week_entry(rotation, offset_weeks=0):
     today = datetime.date.today() + datetime.timedelta(weeks=offset_weeks)
     start = datetime.date.fromisocalendar(ROTATION_START_YEAR, ROTATION_START_WEEK, 1)
     weeks_since_start = (today - start).days // 7
-    index = weeks_since_start % len(ROTATION)
+    index = weeks_since_start % len(rotation)
     week_num = today.isocalendar()[1]
-    return {"uke": week_num, "ansvarlige": ROTATION[index]}
+    return {"uke": week_num, "ansvarlige": rotation[index]}
 
-def make_mention(name: str):
-    user = USERS.get(name, {})
+
+def make_mention(users, name):
+    user = users.get(name, {})
     object_id = user.get("object_id", "")
     if object_id:
         mention_text = f"<at>{name}</at>"
@@ -82,10 +92,10 @@ def make_mention(name: str):
             "mentioned": {"id": object_id, "name": name}
         }
         return mention_text, entity
-    else:
-        return name, None
+    return name, None
 
-def get_giphy_gif(api_key: str):
+
+def get_giphy_gif(api_key):
     search_term = random.choice(GIPHY_SEARCH_TERMS)
     url = (
         f"https://api.giphy.com/v1/gifs/random"
@@ -102,7 +112,8 @@ def get_giphy_gif(api_key: str):
         print(f"Kunne ikke hente GIF: {e}")
         return None
 
-def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, gif_url: str = None):
+
+def send_teams_message(webhook_url, users, entry, gif_url=None):
     names = entry["ansvarlige"]
     week_num = entry["uke"]
     quote = random.choice(QUOTES)
@@ -110,7 +121,7 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
     mention_texts = []
     entities = []
     for name in names:
-        text, entity = make_mention(name)
+        text, entity = make_mention(users, name)
         mention_texts.append(text)
         if entity:
             entities.append(entity)
@@ -134,7 +145,7 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
         },
         {
             "type": "TextBlock",
-            "text": f"\"{quote['text']}\" - {quote['author']}",
+            "text": f'"{quote["text"]}" - {quote["author"]}',
             "wrap": True,
             "spacing": "Medium"
         },
@@ -171,26 +182,29 @@ def send_teams_message(webhook_url: str, entry: dict, next_entry: dict = None, g
         data=data,
         headers={"Content-Type": "application/json"}
     )
-
     with urllib.request.urlopen(req) as response:
         print(f"Melding sendt! Status: {response.status}")
         print(f"Uke {week_num}: {plain_names}")
 
+
 def main():
     webhook_url = os.environ.get("TEAMS_WEBHOOK_URL")
     if not webhook_url:
-        print("Mangler TEAMS_WEBHOOK_URL miljovariabel")
+        print("Mangler TEAMS_WEBHOOK_URL miljøvariabel")
         sys.exit(1)
 
-    entry = get_week_entry(0)
-    next_entry = get_week_entry(1)
+    users = load_users()
+    rotation = load_rotation()
+
+    entry = get_week_entry(rotation, 0)
 
     gif_url = None
     giphy_api_key = os.environ.get("GIPHY_API_KEY")
     if giphy_api_key:
         gif_url = get_giphy_gif(giphy_api_key)
 
-    send_teams_message(webhook_url, entry, next_entry, gif_url)
+    send_teams_message(webhook_url, users, entry, gif_url)
+
 
 if __name__ == "__main__":
     main()
