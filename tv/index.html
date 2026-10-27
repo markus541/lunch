@@ -111,6 +111,8 @@ body {
 .eq { display: flex; gap: 0.3vw; align-items: flex-end; height: 1.8vw; margin-top: 0.6vh; }
 .eq i { width: 0.35vw; min-width: 3px; background: var(--accent); border-radius: 2px; animation: eq 1.1s ease-in-out infinite alternate; }
 .eq i:nth-child(2){animation-delay:.2s}.eq i:nth-child(3){animation-delay:.45s}.eq i:nth-child(4){animation-delay:.1s}
+.cover { background-size: cover; background-position: center; }
+.eq.paused i { animation-play-state: paused; height: 20%; opacity: 0.5; }
 @keyframes eq { from { height: 20%; } to { height: 100%; } }
 
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 60%; } .slide { transition: none; } }
@@ -175,12 +177,12 @@ body {
   </section>
 
   <section class="tile music" aria-label="Spilles nå">
-    <div class="cover" role="img" aria-label="Albumcover"></div>
+    <div class="cover" id="cover" role="img" aria-label="Albumcover"></div>
     <div class="meta">
-      <span class="label">Spilles nå <span class="example">eksempel</span></span>
-      <div class="track">Spotify kobles på snart</div>
-      <div class="artist">Nest Audio · Kontoret</div>
-      <div class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <span class="label" id="musicLabel">Spilles nå</span>
+      <div class="track" id="track">Henter musikk …</div>
+      <div class="artist" id="artist">Spotify · Kontoret</div>
+      <div class="eq" id="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     </div>
   </section>
 </main>
@@ -197,7 +199,12 @@ const CONFIG = {
     ["Øyvind", "Lise"],
     ["Markus", "Guri"]
   ],
-  payday: 15,                  // dag i måneden; flyttes til fredag før ved helg
+  payday: 15,                  // vanlig dag i måneden; flyttes til fredag før ved helg
+  paydays: ["2026-11-12"],     // faste datoer som overstyrer regelen (ÅÅÅÅ-MM-DD)
+  // Spotify via Last.fm-scrobbling
+  lastfmUser: "HavnevikAS",
+  lastfmKey: "8a92b008142190aae7514ad48b44f436",
+  musicRefreshSeconds: 20,
   slideSeconds: 12,
   // Bilder og video legges i mappa tv/slides i GitHub-repoet
   slidesApi: "https://api.github.com/repos/markus541/lunch/contents/tv/slides?ref=main",
@@ -241,11 +248,18 @@ function renderLunch() {
   document.getElementById("lunchNext").textContent = "Neste uke: " + pick(weeks + 1);
 }
 
+// Lønningspils for en måned: fast dato fra CONFIG.paydays hvis den finnes, ellers regelen
+function pilsInMonth(year, month) {
+  const fixed = CONFIG.paydays.map(d => new Date(d + "T00:00:00"))
+    .filter(d => d.getFullYear() === new Date(year, month, 1).getFullYear() && d.getMonth() === new Date(year, month, 1).getMonth())[0];
+  return fixed || paydayIn(year, month);
+}
+
 function renderPils() {
   const today = startOfDay(new Date());
-  let next = paydayIn(today.getFullYear(), today.getMonth());
-  if (next < today) next = paydayIn(today.getFullYear(), today.getMonth() + 1);
-  let prev = paydayIn(next.getFullYear(), next.getMonth() - 1);
+  let next = pilsInMonth(today.getFullYear(), today.getMonth());
+  if (next < today) next = pilsInMonth(today.getFullYear(), today.getMonth() + 1);
+  const prev = pilsInMonth(next.getFullYear(), next.getMonth() - 1);
   const days = Math.round((next - today) / DAY);
   const total = Math.round((next - prev) / DAY);
   document.getElementById("pilsDays").textContent = days === 0 ? "I dag" : days;
@@ -333,10 +347,34 @@ function startSlides() {
   setInterval(loadSlides, CONFIG.slidesRefreshMinutes * 60000);
 }
 
+// ---- Spotify «spilles nå» via Last.fm ----
+const LASTFM_BLANK = "2a96cbd8b46e442fc41c2b86b821562f";
+function loadMusic() {
+  const url = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&format=json&limit=1" +
+    "&user=" + encodeURIComponent(CONFIG.lastfmUser) + "&api_key=" + CONFIG.lastfmKey;
+  fetch(url, { cache: "no-store" })
+    .then(r => r.json())
+    .then(data => {
+      const t = data && data.recenttracks && data.recenttracks.track && data.recenttracks.track[0];
+      if (!t) return;
+      const playing = !!(t["@attr"] && t["@attr"].nowplaying === "true");
+      const img = (t.image || []).filter(i => i.size === "extralarge")[0];
+      const src = img && img["#text"] && img["#text"].indexOf(LASTFM_BLANK) < 0 ? img["#text"] : "";
+      document.getElementById("musicLabel").textContent = playing ? "Spilles nå" : "Sist spilt";
+      document.getElementById("track").textContent = t.name;
+      document.getElementById("artist").textContent = t.artist["#text"] + (t.album && t.album["#text"] ? " · " + t.album["#text"] : "");
+      document.getElementById("cover").style.backgroundImage = src ? "url('" + src + "')" : "";
+      document.getElementById("eq").classList.toggle("paused", !playing);
+    })
+    .catch(() => {});
+}
+
 function tick() { renderClock(); renderLunch(); renderPils(); }
 tick();
 setInterval(tick, 10000);
 startSlides();
+loadMusic();
+setInterval(loadMusic, CONFIG.musicRefreshSeconds * 1000);
 
 // Hold skjermen våken der nettleseren tillater det
 async function keepAwake() {
