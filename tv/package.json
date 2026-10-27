@@ -1,0 +1,9 @@
+{
+  "name": "havnevik-kontorskjerm",
+  "version": "1.0.0",
+  "description": "Kontorskjerm for Havnevik: klokke, lunsj, lønningspils, slideshow og Spotify.",
+  "packageType": "app",
+  "appName": "Havnevik Kontorskjerm",
+  "appPath": "index.html",
+  "keys": []
+}
