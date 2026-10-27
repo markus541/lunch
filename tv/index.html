@@ -75,6 +75,8 @@ body {
   opacity: 0; transition: opacity 1.4s ease;
 }
 .slide.on { opacity: 1; }
+.slide.media { padding: 0; background: #000; }
+.slide.media img, .slide.media video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .slide h2 { font-family: var(--display); font-weight: 800; font-size: 4.2vw; line-height: 0.95; margin: 0; text-wrap: balance; max-width: 14ch; letter-spacing: -0.02em; }
 .slide p { margin: 1.2vh 0 0; font-size: 1.2vw; color: #ffffffcc; max-width: 46ch; }
 .slide .label { position: absolute; top: 2.2vw; left: 2.6vw; color: #ffffffb0; }
@@ -149,7 +151,7 @@ body {
   </section>
 
   <section class="tile slides" aria-label="Lysbildeshow">
-    <div class="slide s1 on"><span class="label">Fra mappa <span class="example">eksempel</span></span><h2>Bilder fra delt mappe havner her</h2><p>Dra en fil inn i mappa fra Macen, så dukker den opp i loopen. Kobles på i neste runde.</p></div>
+    <div class="slide s1 on"><span class="label">Fra mappa <span class="example">eksempel</span></span><h2>Bilder fra delt mappe havner her</h2><p>Last opp bilder eller video til tv/slides, så erstatter de disse eksemplene innen 15 minutter.</p></div>
     <div class="slide s2"><span class="label">Nylig levert <span class="example">eksempel</span></span><h2>Kundeleveranser som showreel</h2><p>Bilder og korte videoer fra prosjekter vi er stolte av.</p></div>
     <div class="slide s3"><span class="label">Beskjed <span class="example">eksempel</span></span><h2>Fredagskaffe kl. 14 i kantina</h2><p>Korte beskjeder kan også legges inn som egne lysbilder.</p></div>
     <div class="dots" id="dots"></div>
@@ -196,7 +198,10 @@ const CONFIG = {
     ["Markus", "Guri"]
   ],
   payday: 15,                  // dag i måneden; flyttes til fredag før ved helg
-  slideSeconds: 12
+  slideSeconds: 12,
+  // Bilder og video legges i mappa tv/slides i GitHub-repoet
+  slidesApi: "https://api.github.com/repos/markus541/lunch/contents/tv/slides?ref=main",
+  slidesRefreshMinutes: 15
 };
 
 const pad = n => String(n).padStart(2, "0");
@@ -249,17 +254,83 @@ function renderPils() {
   document.getElementById("pilsBar").style.width = Math.max(0, Math.min(100, (1 - days / total) * 100)) + "%";
 }
 
+// ---- Lysbildeshow: bilder/video fra tv/slides, eksempelslides som reserve ----
+const SLIDES = { box: null, dots: null, list: [], k: 0, timer: null, signature: "" };
+const IMG_RE = /\.(jpe?g|png|webp|gif)$/i;
+const VID_RE = /\.(mp4|webm|mov)$/i;
+
+function buildDots() {
+  SLIDES.dots.innerHTML = "";
+  SLIDES.list.forEach(() => SLIDES.dots.appendChild(document.createElement("i")));
+}
+
+function showSlide() {
+  clearTimeout(SLIDES.timer);
+  const list = SLIDES.list;
+  if (!list.length) return;
+  SLIDES.k = SLIDES.k % list.length;
+  list.forEach((s, j) => {
+    const on = j === SLIDES.k;
+    s.classList.toggle("on", on);
+    const v = s.querySelector("video");
+    if (v) { if (on) { v.currentTime = 0; v.play().catch(() => {}); } else v.pause(); }
+  });
+  [].forEach.call(SLIDES.dots.children, (d, j) => d.classList.toggle("on", j === SLIDES.k));
+  const cur = list[SLIDES.k];
+  const v = cur.querySelector("video");
+  const next = () => { SLIDES.k = (SLIDES.k + 1) % SLIDES.list.length; showSlide(); };
+  if (v) {
+    v.onended = next;
+    SLIDES.timer = setTimeout(next, 90000); // sikkerhetsnett for lange/ødelagte videoer
+  } else if (list.length > 1) {
+    SLIDES.timer = setTimeout(next, CONFIG.slideSeconds * 1000);
+  }
+}
+
+function mediaSlide(file) {
+  const s = document.createElement("div");
+  s.className = "slide media";
+  if (VID_RE.test(file.name)) {
+    const v = document.createElement("video");
+    v.src = file.download_url; v.muted = true; v.playsInline = true; v.preload = "auto";
+    v.setAttribute("muted", ""); v.setAttribute("playsinline", "");
+    s.appendChild(v);
+  } else {
+    const img = document.createElement("img");
+    img.src = file.download_url; img.alt = "";
+    s.appendChild(img);
+  }
+  return s;
+}
+
+function loadSlides() {
+  fetch(CONFIG.slidesApi, { cache: "no-store" })
+    .then(r => r.ok ? r.json() : [])
+    .then(items => {
+      const files = (Array.isArray(items) ? items : [])
+        .filter(f => f.type === "file" && (IMG_RE.test(f.name) || VID_RE.test(f.name)))
+        .sort((a, b) => a.name.localeCompare(b.name, "nb"));
+      const sig = files.map(f => f.sha).join(",");
+      if (!files.length || sig === SLIDES.signature) return;
+      SLIDES.signature = sig;
+      SLIDES.box.querySelectorAll(".slide").forEach(s => s.remove());
+      SLIDES.list = files.map(mediaSlide);
+      SLIDES.list.forEach(s => SLIDES.box.insertBefore(s, SLIDES.dots));
+      SLIDES.k = 0;
+      buildDots();
+      showSlide();
+    })
+    .catch(() => {});
+}
+
 function startSlides() {
-  const slides = [...document.querySelectorAll(".slide")];
-  const dots = document.getElementById("dots");
-  slides.forEach(() => dots.appendChild(document.createElement("i")));
-  let k = 0;
-  const show = () => {
-    slides.forEach((s, j) => s.classList.toggle("on", j === k));
-    [...dots.children].forEach((d, j) => d.classList.toggle("on", j === k));
-  };
-  show();
-  setInterval(() => { k = (k + 1) % slides.length; show(); }, CONFIG.slideSeconds * 1000);
+  SLIDES.box = document.querySelector(".slides");
+  SLIDES.dots = document.getElementById("dots");
+  SLIDES.list = [].slice.call(document.querySelectorAll(".slide"));
+  buildDots();
+  showSlide();
+  loadSlides();
+  setInterval(loadSlides, CONFIG.slidesRefreshMinutes * 60000);
 }
 
 function tick() { renderClock(); renderLunch(); renderPils(); }
