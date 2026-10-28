@@ -90,9 +90,7 @@ body {
 }
 .slide.on { opacity: 1; }
 .slide.media { padding: 0; background: #000; }
-.slide.media .bg, .slide.media .fg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; }
-.slide.media .bg { object-fit: cover; filter: blur(28px) brightness(0.55); transform: scale(1.15); }
-.slide.media .fg { object-fit: contain; }
+.slide.media img, .slide.media video { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block; object-fit: cover; }
 .slide h2 { font-family: var(--display); font-weight: 800; font-size: 4.2vw; line-height: 0.95; margin: 0; text-wrap: balance; max-width: 14ch; letter-spacing: -0.02em; }
 .slide p { margin: 1.2vh 0 0; font-size: 1.2vw; color: #ffffffcc; max-width: 46ch; }
 .slide .label { position: absolute; top: 2.2vw; left: 2.6vw; color: #ffffffb0; }
@@ -217,7 +215,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -231,7 +229,7 @@ const CONFIG = {
   payday: 15,                  // vanlig dag i måneden; flyttes til fredag før ved helg
   // Nedtellinger leses fra tv/nedtelling.json. «Lønningspils» der overstyrer regelen for sin måned.
   countdownUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/nedtelling.json",
-  countdownSeconds: 10,
+  countdownSeconds: 30 * 60,   // bytt nedtelling hvert 30. minutt
   // Spotify via Last.fm-scrobbling (bruker og nøkkel ligger i tv/config.json)
   configUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/config.json",
   lastfmUser: "",
@@ -244,7 +242,7 @@ const CONFIG = {
   // Neste konsert fra gullkort.vercel.app
   gigsUrl: "https://gullkort.vercel.app/api/tv",
   gigTickets: 4,
-  gigSeconds: 12
+  gigSeconds: 30 * 60          // bytt konsert hvert 30. minutt
 };
 
 const pad = n => String(n).padStart(2, "0");
@@ -405,7 +403,13 @@ function showSlide() {
     const on = j === SLIDES.k;
     s.classList.toggle("on", on);
     const v = s.querySelector("video");
-    if (v) { if (on) { v.currentTime = 0; v.play().catch(() => {}); } else v.pause(); }
+    if (!v) return;
+    if (on) {
+      if (!v.getAttribute("src")) { v.src = v.getAttribute("data-src"); v.load(); }
+      v.currentTime = 0; v.play().catch(() => {});
+    } else if (v.getAttribute("src")) {
+      v.pause(); v.removeAttribute("src"); v.load();
+    }
   });
   [].forEach.call(SLIDES.dots.children, (d, j) => d.classList.toggle("on", j === SLIDES.k));
   const cur = list[SLIDES.k];
@@ -423,25 +427,16 @@ function mediaSlide(file) {
   const s = document.createElement("div");
   s.className = "slide media";
   if (VID_RE.test(file.name)) {
-    // Bakgrunn: ett uskarpt stillbilde fra videoen (billig, i stedet for to videoer samtidig)
-    const bg = document.createElement("canvas");
-    bg.className = "bg"; bg.width = 64; bg.height = 36;
+    // Videoen lastes først når den vises, og slippes etterpå, så TV-en bare spiller én om gangen
     const v = document.createElement("video");
-    v.className = "fg";
-    v.src = file.download_url; v.muted = true; v.playsInline = true; v.preload = "auto";
+    v.setAttribute("data-src", file.download_url);
+    v.muted = true; v.playsInline = true; v.preload = "none";
     v.setAttribute("muted", ""); v.setAttribute("playsinline", "");
-    let grabbed = false;
-    v.addEventListener("timeupdate", () => {
-      if (grabbed || v.currentTime < 0.5) return;
-      try { bg.getContext("2d").drawImage(v, 0, 0, bg.width, bg.height); grabbed = true; } catch (e) {}
-    });
-    s.appendChild(bg); s.appendChild(v);
+    s.appendChild(v);
   } else {
-    const bg = document.createElement("img");
-    bg.className = "bg"; bg.src = file.download_url; bg.alt = "";
     const img = document.createElement("img");
-    img.className = "fg"; img.src = file.download_url; img.alt = "";
-    s.appendChild(bg); s.appendChild(img);
+    img.src = file.download_url; img.alt = "";
+    s.appendChild(img);
   }
   return s;
 }
