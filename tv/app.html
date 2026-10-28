@@ -66,6 +66,12 @@ body {
 .date { font-family: var(--display); font-weight: 400; font-size: 1.7vw; margin-top: 0.8vh; text-transform: capitalize; }
 .week { display: inline-flex; align-items: baseline; gap: 0.5em; margin-top: 1vh; font-family: var(--mono); font-size: 1vw; color: var(--accent); }
 .week b { font-family: var(--display); font-size: 1.9vw; font-weight: 600; color: var(--fg); }
+/* Vær fra Yr (MET Norway) øverst til høyre i klokkeflisen */
+.weather { position: absolute; top: 1.1vw; right: 1.4vw; display: flex; align-items: center; }
+.weather img { width: 3.3vw; height: 3.3vw; margin-right: 0.4vw; }
+.weather .temp { font-family: var(--display); font-weight: 600; font-size: 2vw; line-height: 1; color: var(--buoy); font-variant-numeric: tabular-nums; }
+.weather[hidden], .weather-src[hidden] { display: none; }
+.weather-src { position: absolute; top: 4.5vw; right: 1.4vw; font-family: var(--mono); font-size: 0.6vw; letter-spacing: 0.08em; color: var(--muted); opacity: 0.7; }
 
 /* Neste konsert (Gullkort / Terminalen) */
 .gig { grid-column: 1 / 3; grid-row: 2; background: var(--tile-2); background-size: cover; background-position: center; }
@@ -168,6 +174,8 @@ body {
 <main class="screen">
   <section class="tile clock" aria-label="Klokke">
     <span class="label">Ålesund</span>
+    <div class="weather" id="weather" hidden><img id="wxIcon" alt=""><span class="temp" id="wxTemp"></span></div>
+    <span class="weather-src" id="wxSrc" hidden>YR / MET NORWAY</span>
     <div class="grow">
       <div class="time" id="time">--:--</div>
       <div class="date" id="date"></div>
@@ -222,7 +230,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.12.0";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -248,6 +256,10 @@ const CONFIG = {
   // Bilder og video legges i mappa tv/slides i GitHub-repoet
   slidesApi: "https://api.github.com/repos/markus541/lunch/contents/tv/slides?ref=main",
   slidesRefreshMinutes: 15,
+  // Vær for Ålesund fra MET Norway (Yr), ikoner fra metno/weathericons
+  weatherUrl: "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=62.4722&lon=6.1495",
+  weatherIcons: "https://cdn.jsdelivr.net/gh/metno/weathericons@main/weather/svg/",
+  weatherMinutes: 30,
   // Neste konsert fra gullkort.vercel.app
   gigsUrl: "https://gullkort.vercel.app/api/tv",
   gigTickets: 4,
@@ -541,12 +553,34 @@ function loadMusic() {
     .catch(() => {});
 }
 
+// ---- Vær (Yr / MET Norway) ----
+function loadWeather() {
+  fetch(CONFIG.weatherUrl)
+    .then(r => r.json())
+    .then(j => {
+      const now = Date.now();
+      const ts = j.properties.timeseries.filter(x => new Date(x.time).getTime() + 3600000 > now)[0];
+      if (!ts) return;
+      const d = ts.data;
+      const next = d.next_1_hours || d.next_6_hours;
+      const temp = Math.round(d.instant.details.air_temperature);
+      const el = document.getElementById("wxTemp");
+      el.textContent = temp + "°";
+      if (next) document.getElementById("wxIcon").src = CONFIG.weatherIcons + next.summary.symbol_code + ".svg";
+      document.getElementById("weather").hidden = false;
+      document.getElementById("wxSrc").hidden = false;
+    })
+    .catch(() => {});
+}
+
 function tick() { renderClock(); renderLunch(); renderPils(); }
 tick();
 setInterval(tick, 10000);
 startSlides();
 loadCountdowns();
 loadGigs();
+loadWeather();
+setInterval(loadWeather, CONFIG.weatherMinutes * 60000);
 setInterval(loadGigs, 15 * 60000);
 setInterval(rotateGig, CONFIG.gigSeconds * 1000);
 setInterval(loadCountdowns, 15 * 60000);
