@@ -100,6 +100,8 @@ body {
 .count b { font-family: var(--display); font-weight: 800; font-size: 5.4vw; line-height: 0.85; color: var(--buoy); font-variant-numeric: tabular-nums; }
 .count span { font-family: var(--display); font-size: 1.8vw; }
 .pils .next { margin-top: 0.8vh; }
+.pils .grow, #cdTitle { transition: opacity 0.6s ease; }
+.pils.fade .grow, .pils.fade #cdTitle { opacity: 0; }
 .bar { height: 0.5vh; min-height: 4px; background: var(--line); border-radius: 99px; margin-top: 1.4vh; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--buoy); border-radius: 99px; }
 
@@ -169,8 +171,8 @@ body {
     </div>
   </section>
 
-  <section class="tile pils" aria-label="Lønningspils">
-    <span class="label">Lønningspils</span>
+  <section class="tile pils" aria-label="Nedtelling">
+    <span class="label" id="cdTitle">Lønningspils</span>
     <div class="grow">
       <div class="count"><b id="pilsDays">–</b><span id="pilsUnit">dager</span></div>
       <div class="next" id="pilsDate"></div>
@@ -191,7 +193,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -203,7 +205,9 @@ const CONFIG = {
     ["Markus", "Guri"]
   ],
   payday: 15,                  // vanlig dag i måneden; flyttes til fredag før ved helg
-  paydays: ["2026-11-12"],     // faste datoer som overstyrer regelen (ÅÅÅÅ-MM-DD)
+  // Nedtellinger leses fra tv/nedtelling.json. «Lønningspils» der overstyrer regelen for sin måned.
+  countdownUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/nedtelling.json",
+  countdownSeconds: 10,
   // Spotify via Last.fm-scrobbling (bruker og nøkkel ligger i tv/config.json)
   configUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/config.json",
   lastfmUser: "",
@@ -252,24 +256,56 @@ function renderLunch() {
   document.getElementById("lunchNext").textContent = "Neste uke: " + pick(weeks + 1);
 }
 
-// Lønningspils for en måned: fast dato fra CONFIG.paydays hvis den finnes, ellers regelen
+// ---- Nedtellinger: lønningspils (automatisk) + datoer fra tv/nedtelling.json ----
+const CD = { events: [], k: 0 };
+const isPils = e => /lønningspils/i.test(e.tittel || "");
+const parseDate = d => new Date(String(d).slice(0, 10) + "T00:00:00");
+
 function pilsInMonth(year, month) {
-  const fixed = CONFIG.paydays.map(d => new Date(d + "T00:00:00"))
-    .filter(d => d.getFullYear() === new Date(year, month, 1).getFullYear() && d.getMonth() === new Date(year, month, 1).getMonth())[0];
+  const first = new Date(year, month, 1);
+  const fixed = CD.events.filter(isPils).map(e => parseDate(e.dato))
+    .filter(d => d.getFullYear() === first.getFullYear() && d.getMonth() === first.getMonth())[0];
   return fixed || paydayIn(year, month);
 }
 
-function renderPils() {
+function countdownList() {
   const today = startOfDay(new Date());
   let next = pilsInMonth(today.getFullYear(), today.getMonth());
   if (next < today) next = pilsInMonth(today.getFullYear(), today.getMonth() + 1);
   const prev = pilsInMonth(next.getFullYear(), next.getMonth() - 1);
-  const days = Math.round((next - today) / DAY);
-  const total = Math.round((next - prev) / DAY);
+  const list = [{ title: "Lønningspils", date: next, from: prev, done: "🍻" }];
+  CD.events.filter(e => !isPils(e) && e.tittel && e.dato).forEach(e => {
+    const d = parseDate(e.dato);
+    if (!isNaN(d) && d >= today) list.push({ title: e.tittel, date: d, from: new Date(d.getTime() - 60 * DAY), done: "🎉" });
+  });
+  return list.sort((a, b) => a.date - b.date);
+}
+
+function renderPils() {
+  const list = countdownList();
+  const item = list[CD.k % list.length];
+  const today = startOfDay(new Date());
+  const days = Math.round((item.date - today) / DAY);
+  const total = Math.max(1, Math.round((item.date - item.from) / DAY));
+  document.getElementById("cdTitle").textContent = item.title;
   document.getElementById("pilsDays").textContent = days === 0 ? "I dag" : days;
-  document.getElementById("pilsUnit").textContent = days === 0 ? "🍻" : (days === 1 ? "dag" : "dager");
-  document.getElementById("pilsDate").textContent = next.toLocaleDateString("nb-NO", { weekday: "long", day: "numeric", month: "long" });
+  document.getElementById("pilsUnit").textContent = days === 0 ? item.done : (days === 1 ? "dag" : "dager");
+  document.getElementById("pilsDate").textContent = item.date.toLocaleDateString("nb-NO", { weekday: "long", day: "numeric", month: "long" });
   document.getElementById("pilsBar").style.width = Math.max(0, Math.min(100, (1 - days / total) * 100)) + "%";
+}
+
+function rotateCountdown() {
+  if (countdownList().length < 2) return;
+  const tile = document.querySelector(".pils");
+  tile.classList.add("fade");
+  setTimeout(() => { CD.k++; renderPils(); tile.classList.remove("fade"); }, 600);
+}
+
+function loadCountdowns() {
+  fetch(CONFIG.countdownUrl + "?t=" + Date.now(), { cache: "no-store" })
+    .then(r => r.json())
+    .then(list => { if (Array.isArray(list)) { CD.events = list; renderPils(); } })
+    .catch(() => {});
 }
 
 // ---- Lysbildeshow: bilder/video fra tv/slides, eksempelslides som reserve ----
@@ -389,6 +425,9 @@ function tick() { renderClock(); renderLunch(); renderPils(); }
 tick();
 setInterval(tick, 10000);
 startSlides();
+loadCountdowns();
+setInterval(loadCountdowns, 15 * 60000);
+setInterval(rotateCountdown, CONFIG.countdownSeconds * 1000);
 fetch(CONFIG.configUrl + "?t=" + Date.now(), { cache: "no-store" })
   .then(r => r.json())
   .then(c => { CONFIG.lastfmUser = c.lastfmUser; CONFIG.lastfmKey = c.lastfmKey; loadMusic(); setInterval(loadMusic, CONFIG.musicRefreshSeconds * 1000); })
