@@ -215,7 +215,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -473,6 +473,20 @@ function startSlides() {
 
 // ---- Spotify «spilles nå» via Last.fm ----
 const LASTFM_BLANK = "2a96cbd8b46e442fc41c2b86b821562f";
+const ART_CACHE = {};
+// Last.fm mangler ofte cover for mindre artister – slå opp i iTunes som reserve
+function findArt(artist, track, cb) {
+  const key = artist + "|" + track;
+  if (key in ART_CACHE) return cb(ART_CACHE[key]);
+  fetch("https://itunes.apple.com/search?entity=song&limit=1&term=" + encodeURIComponent(artist + " " + track))
+    .then(r => r.json())
+    .then(j => {
+      const hit = j && j.results && j.results[0];
+      ART_CACHE[key] = hit && hit.artworkUrl100 ? hit.artworkUrl100.replace("100x100bb", "600x600bb") : "";
+      cb(ART_CACHE[key]);
+    })
+    .catch(() => cb(""));
+}
 function loadMusic() {
   if (!CONFIG.lastfmKey) return;
   const url = "https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&format=json&limit=1" +
@@ -488,7 +502,9 @@ function loadMusic() {
       document.getElementById("musicLabel").textContent = playing ? "Spilles nå" : "Sist spilt";
       document.getElementById("track").textContent = t.name;
       document.getElementById("artist").textContent = t.artist["#text"] + (t.album && t.album["#text"] ? " · " + t.album["#text"] : "");
-      setImage(document.getElementById("coverImg"), src);
+      const coverEl = document.getElementById("coverImg");
+      if (src) setImage(coverEl, src);
+      else findArt(t.artist["#text"], t.name, art => setImage(coverEl, art));
       document.getElementById("eq").classList.toggle("paused", !playing);
     })
     .catch(() => {});
