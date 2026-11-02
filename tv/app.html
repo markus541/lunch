@@ -230,7 +230,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.12.1";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -356,7 +356,7 @@ function loadCountdownImages() {
     .then(items => {
       (Array.isArray(items) ? items : []).forEach(f => {
         const m = /^(.+)\.(jpe?g|png|webp)$/i.exec(f.name || "");
-        if (f.type === "file" && m) CD_IMG[slugify(m[1])] = f.download_url;
+        if (f.type === "file" && m) CD_IMG[slugify(m[1])] = f.download_url + "?v=" + f.sha;
       });
       renderPils();
     })
@@ -472,13 +472,13 @@ function mediaSlide(file) {
   if (VID_RE.test(file.name)) {
     // Videoen lastes først når den vises, og slippes etterpå, så TV-en bare spiller én om gangen
     const v = document.createElement("video");
-    v.setAttribute("data-src", file.download_url);
+    v.setAttribute("data-src", file.download_url + "?v=" + file.sha);
     v.muted = true; v.playsInline = true; v.preload = "none";
     v.setAttribute("muted", ""); v.setAttribute("playsinline", "");
     s.appendChild(v);
   } else {
     const img = document.createElement("img");
-    img.src = file.download_url; img.alt = "";
+    img.src = file.download_url + "?v=" + file.sha; img.alt = "";
     s.appendChild(img);
   }
   return s;
