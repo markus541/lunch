@@ -230,7 +230,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.12.1";
+const APP_VERSION = "1.13.0";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -255,6 +255,9 @@ const CONFIG = {
   slideSeconds: 12,
   // Bilder og video legges i mappa tv/slides i GitHub-repoet
   slidesApi: "https://api.github.com/repos/markus541/lunch/contents/tv/slides?ref=main",
+  // Filliste lages automatisk av en GitHub Action (tv/manifest.json); API-et over er bare reserve
+  manifestUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/manifest.json",
+  rawBase: "https://raw.githubusercontent.com/markus541/lunch/main/tv/",
   slidesRefreshMinutes: 15,
   // Vær for Ålesund fra MET Norway (Yr), ikoner fra metno/weathericons
   weatherUrl: "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=62.4722&lon=6.1495",
@@ -350,9 +353,20 @@ function renderPils() {
 const CD_IMG = {};
 const slugify = t => String(t).toLowerCase().replace(/æ/g, "ae").replace(/ø/g, "o").replace(/å/g, "a")
   .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+// Filliste for en mappe: først fra tv/manifest.json (via raw), ellers fra GitHub-API-et
+function getListing(kind, apiUrl) {
+  return fetch(CONFIG.manifestUrl + "?t=" + Date.now(), { cache: "no-store" })
+    .then(r => { if (!r.ok) throw new Error("manifest"); return r.json(); })
+    .then(m => {
+      if (!m || !Array.isArray(m[kind])) throw new Error("manifest");
+      return m[kind].map(f => ({ type: "file", name: f.name, sha: f.sha,
+        download_url: CONFIG.rawBase + kind + "/" + encodeURIComponent(f.name) }));
+    })
+    .catch(() => fetch(apiUrl, { cache: "no-store" }).then(r => r.ok ? r.json() : []));
+}
+
 function loadCountdownImages() {
-  fetch(CONFIG.countdownImagesApi, { cache: "no-store" })
-    .then(r => r.ok ? r.json() : [])
+  getListing("nedtelling", CONFIG.countdownImagesApi)
     .then(items => {
       (Array.isArray(items) ? items : []).forEach(f => {
         const m = /^(.+)\.(jpe?g|png|webp)$/i.exec(f.name || "");
@@ -485,8 +499,7 @@ function mediaSlide(file) {
 }
 
 function loadSlides() {
-  fetch(CONFIG.slidesApi, { cache: "no-store" })
-    .then(r => r.ok ? r.json() : [])
+  getListing("slides", CONFIG.slidesApi)
     .then(items => {
       const files = (Array.isArray(items) ? items : [])
         .filter(f => f.type === "file" && (IMG_RE.test(f.name) || VID_RE.test(f.name)))
