@@ -1,0 +1,58 @@
+name: Kontorskjerm manifest
+
+# Lager tv/manifest.json (liste over bilder/video) hver gang noe endres i
+# tv/slides eller tv/nedtelling. TV-en leser lista via raw.githubusercontent.com.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tv/slides/**"
+      - "tv/nedtelling/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: kontorskjerm-manifest
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lag manifest
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+
+          def ls(path):
+              out = subprocess.run(["git", "ls-tree", "-z", "HEAD", path + "/"],
+                                   capture_output=True, check=True).stdout.decode("utf-8")
+              items = []
+              for entry in filter(None, out.split("\0")):
+                  meta, name = entry.split("\t", 1)
+                  _mode, kind, sha = meta.split()
+                  if kind == "blob":
+                      items.append({"name": name.split("/")[-1], "sha": sha})
+              return items
+
+          manifest = {"slides": ls("tv/slides"), "nedtelling": ls("tv/nedtelling")}
+          with open("tv/manifest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, ensure_ascii=False, indent=1)
+              f.write("\n")
+          PY
+
+      - name: Lagre manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add tv/manifest.json
+          if git diff --cached --quiet; then
+            echo "Ingen endringer"
+          else
+            git commit -m "Kontorskjerm: oppdater manifest"
+            for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done
+          fi
