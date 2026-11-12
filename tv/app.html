@@ -146,8 +146,10 @@ body {
 
 /* Snøsesong: diskret snøfall over skjermen */
 .snow { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; overflow: hidden; }
-.snow i { position: absolute; top: 0; display: block; border-radius: 50%; background: #fff; animation-name: snowfall; animation-timing-function: linear; animation-iteration-count: infinite; }
-@keyframes snowfall { from { transform: translate3d(0, -5vh, 0); } to { transform: translate3d(2vw, 105vh, 0); } }
+.snow i { position: absolute; top: 0; display: block; border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.55); will-change: transform; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes snowA { from { transform: translate3d(0, -5vh, 0); } 50% { transform: translate3d(2.5vw, 50vh, 0); } to { transform: translate3d(0.5vw, 105vh, 0); } }
+@keyframes snowB { from { transform: translate3d(0, -5vh, 0); } 50% { transform: translate3d(-2vw, 50vh, 0); } to { transform: translate3d(1.5vw, 105vh, 0); } }
+@keyframes snowC { from { transform: translate3d(0, -5vh, 0); } 50% { transform: translate3d(4vw, 50vh, 0); } to { transform: translate3d(6vw, 105vh, 0); } }
 
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 60%; } .slide { transition: none; } }
 
@@ -235,7 +237,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.13.1";
+const APP_VERSION = "1.13.2";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -603,13 +605,17 @@ function renderSnow() {
   if (on && !snow) {
     snow = document.createElement("div");
     snow.className = "snow"; snow.id = "snow";
-    for (let i = 0; i < 36; i++) {
-      const f = document.createElement("i"), size = 2 + Math.random() * 4;
-      f.style.left = (Math.random() * 100) + "%";
-      f.style.width = f.style.height = size + "px";
-      f.style.opacity = (0.25 + Math.random() * 0.45).toFixed(2);
-      f.style.animationDuration = (12 + Math.random() * 14).toFixed(1) + "s";
-      f.style.animationDelay = (-Math.random() * 26).toFixed(1) + "s";
+    // To lag: mange små fnugg langt unna, og færre store fnugg nær
+    for (let i = 0; i < 80; i++) {
+      const near = i < 22, f = document.createElement("i");
+      const size = near ? 8 + Math.random() * 6 : 4 + Math.random() * 4;
+      const dur = near ? 9 + Math.random() * 5 : 14 + Math.random() * 10;
+      f.style.left = (Math.random() * 102 - 2) + "%";
+      f.style.width = f.style.height = size.toFixed(1) + "px";
+      f.style.opacity = (near ? 0.75 + Math.random() * 0.2 : 0.45 + Math.random() * 0.3).toFixed(2);
+      f.style.animationName = ["snowA", "snowB", "snowC"][i % 3];
+      f.style.animationDuration = dur.toFixed(1) + "s";
+      f.style.animationDelay = (-Math.random() * dur).toFixed(1) + "s";
       snow.appendChild(f);
     }
     document.body.appendChild(snow);
