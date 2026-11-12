@@ -144,6 +144,11 @@ body {
 .eq.paused i { animation-play-state: paused; height: 20%; opacity: 0.5; }
 @keyframes eq { from { height: 20%; } to { height: 100%; } }
 
+/* Snøsesong: diskret snøfall over skjermen */
+.snow { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 20; overflow: hidden; }
+.snow i { position: absolute; top: 0; display: block; border-radius: 50%; background: #fff; animation-name: snowfall; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes snowfall { from { transform: translate3d(0, -5vh, 0); } to { transform: translate3d(2vw, 105vh, 0); } }
+
 @media (prefers-reduced-motion: reduce) { .eq i { animation: none; height: 60%; } .slide { transition: none; } }
 
 /* Mobil / smal visning */
@@ -230,7 +235,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.13.1";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -259,6 +264,9 @@ const CONFIG = {
   manifestUrl: "https://raw.githubusercontent.com/markus541/lunch/main/tv/manifest.json",
   rawBase: "https://raw.githubusercontent.com/markus541/lunch/main/tv/",
   slidesRefreshMinutes: 15,
+  // Snøfall på skjermen i denne perioden (måned-dag, begge dager med)
+  snowFrom: "11-12",
+  snowTo: "12-26",
   // Vær for Ålesund fra MET Norway (Yr), ikoner fra metno/weathericons
   weatherUrl: "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=62.4722&lon=6.1495",
   weatherIcons: "https://cdn.jsdelivr.net/gh/metno/weathericons@main/weather/svg/",
@@ -586,7 +594,29 @@ function loadWeather() {
     .catch(() => {});
 }
 
-function tick() { renderClock(); renderLunch(); renderPils(); }
+// ---- Snøsesong ----
+function renderSnow() {
+  const now = new Date();
+  const md = pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  const on = md >= CONFIG.snowFrom && md <= CONFIG.snowTo;
+  let snow = document.getElementById("snow");
+  if (on && !snow) {
+    snow = document.createElement("div");
+    snow.className = "snow"; snow.id = "snow";
+    for (let i = 0; i < 36; i++) {
+      const f = document.createElement("i"), size = 2 + Math.random() * 4;
+      f.style.left = (Math.random() * 100) + "%";
+      f.style.width = f.style.height = size + "px";
+      f.style.opacity = (0.25 + Math.random() * 0.45).toFixed(2);
+      f.style.animationDuration = (12 + Math.random() * 14).toFixed(1) + "s";
+      f.style.animationDelay = (-Math.random() * 26).toFixed(1) + "s";
+      snow.appendChild(f);
+    }
+    document.body.appendChild(snow);
+  } else if (!on && snow) snow.remove();
+}
+
+function tick() { renderClock(); renderLunch(); renderPils(); renderSnow(); }
 tick();
 setInterval(tick, 10000);
 startSlides();
