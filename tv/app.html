@@ -104,6 +104,9 @@ body {
 .s2 { background: radial-gradient(120% 140% at 15% 0%, #c0743a 0%, #5a3424 45%, #1a1416 100%); }
 .s3 { background: radial-gradient(120% 140% at 70% 100%, #3f5fa8 0%, #1b2a52 50%, #0c1224 100%); }
 .dots { position: absolute; right: 2.6vw; bottom: 2.6vw; display: flex; gap: 0.5vw; z-index: 2; }
+/* Julenissen: video med gjennomsiktig bakgrunn oppå lysbildene, en gang i timen */
+.santa { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center bottom; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 0.5s ease; }
+.santa.on { opacity: 1; }
 .dots i { width: 0.6vw; height: 0.6vw; min-width: 6px; min-height: 6px; border-radius: 50%; background: #ffffff40; }
 .dots i.on { background: #fff; }
 
@@ -204,6 +207,8 @@ body {
     <div class="slide s2"><span class="label">Nylig levert <span class="example">eksempel</span></span><h2>Kundeleveranser som showreel</h2><p>Bilder og korte videoer fra prosjekter vi er stolte av.</p></div>
     <div class="slide s3"><span class="label">Beskjed <span class="example">eksempel</span></span><h2>Fredagskaffe kl. 14 i kantina</h2><p>Korte beskjeder kan også legges inn som egne lysbilder.</p></div>
     <div class="dots" id="dots"></div>
+    <video class="santa" id="santaVid" muted playsinline preload="none" crossorigin="anonymous"></video>
+    <img class="santa" id="santaImg" alt="">
   </section>
 
   <section class="tile lunch" aria-label="Lunsj">
@@ -237,7 +242,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.13.2";
+const APP_VERSION = "1.13.3";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -269,6 +274,11 @@ const CONFIG = {
   // Snøfall på skjermen i denne perioden (måned-dag, begge dager med)
   snowFrom: "11-12",
   snowTo: "12-26",
+  // Julenissen hilser i lysbildeboksen hvert time (på dette minuttet) i snøperioden
+  santaWebm: "https://raw.githubusercontent.com/markus541/lunch/main/tv/jul/nisse.webm",
+  santaWebp: "https://raw.githubusercontent.com/markus541/lunch/main/tv/jul/nisse.webp",
+  santaMinute: 10,
+  santaSeconds: 17.2,
   // Vær for Ålesund fra MET Norway (Yr), ikoner fra metno/weathericons
   weatherUrl: "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=62.4722&lon=6.1495",
   weatherIcons: "https://cdn.jsdelivr.net/gh/metno/weathericons@main/weather/svg/",
@@ -633,6 +643,71 @@ setInterval(loadWeather, CONFIG.weatherMinutes * 60000);
 setInterval(loadGigs, 15 * 60000);
 setInterval(rotateGig, CONFIG.gigSeconds * 1000);
 setInterval(loadCountdowns, 15 * 60000);
+
+// ---- Julenissen ----
+// Prøver video med gjennomsiktig bakgrunn (WebM). Viser TV-en den med svart bakgrunn,
+// brukes animert WebP i stedet (valget huskes på TV-en).
+const SANTA = { busy: false, lastHour: -1, mode: null, blob: null };
+try { SANTA.mode = localStorage.getItem("santaMode"); } catch (e) {}
+function santaSeason() {
+  const now = new Date(), md = pad(now.getMonth() + 1) + "-" + pad(now.getDate());
+  return md >= CONFIG.snowFrom && md <= CONFIG.snowTo;
+}
+function santaDone() {
+  const v = document.getElementById("santaVid"), img = document.getElementById("santaImg");
+  v.classList.remove("on"); img.classList.remove("on");
+  setTimeout(() => {
+    v.pause(); v.removeAttribute("src"); v.load();
+    if (img.src.indexOf("blob:") === 0) URL.revokeObjectURL(img.src);
+    img.removeAttribute("src");
+    SANTA.busy = false;
+  }, 700);
+}
+function santaWebp() {
+  const img = document.getElementById("santaImg");
+  const show = blob => {
+    img.onload = () => { img.classList.add("on"); setTimeout(santaDone, CONFIG.santaSeconds * 1000); };
+    img.src = URL.createObjectURL(blob);   // ny adresse hver gang = animasjonen starter fra begynnelsen
+  };
+  if (SANTA.blob) return show(SANTA.blob);
+  fetch(CONFIG.santaWebp).then(r => r.blob()).then(b => { SANTA.blob = b; show(b); })
+    .catch(() => { SANTA.busy = false; });
+}
+function santaWebm() {
+  const v = document.getElementById("santaVid");
+  let checked = false;
+  v.onended = santaDone;
+  v.onerror = () => { santaUse("webp"); v.onerror = null; santaWebp(); };
+  v.ontimeupdate = () => {
+    if (checked || v.currentTime < 0.4) return;
+    checked = true;
+    let alphaOk = false;
+    try {   // øverste høyre hjørne er tomt i klippet: er det gjennomsiktig, virker alfa
+      const c = document.createElement("canvas"); c.width = 32; c.height = 18;
+      const ctx = c.getContext("2d"); ctx.drawImage(v, 0, 0, 32, 18);
+      alphaOk = ctx.getImageData(31, 0, 1, 1).data[3] < 128;
+    } catch (e) {}
+    if (alphaOk) { santaUse("webm"); v.classList.add("on"); }
+    else { v.onended = null; v.pause(); v.removeAttribute("src"); v.load(); santaUse("webp"); santaWebp(); }
+  };
+  v.src = CONFIG.santaWebm;
+  v.currentTime = 0;
+  v.play().catch(() => { santaUse("webp"); santaWebp(); });
+}
+function santaUse(mode) { SANTA.mode = mode; try { localStorage.setItem("santaMode", mode); } catch (e) {} }
+function playSanta() {
+  if (SANTA.busy) return;
+  SANTA.busy = true;
+  if (SANTA.mode === "webp") santaWebp(); else santaWebm();
+}
+setInterval(() => {
+  const now = new Date();
+  if (!santaSeason() || now.getMinutes() !== CONFIG.santaMinute || SANTA.lastHour === now.getHours()) return;
+  SANTA.lastHour = now.getHours();
+  playSanta();
+}, 20000);
+// Ett besøk ett minutt etter oppstart, så det er lett å se at det virker
+setTimeout(() => { if (santaSeason()) playSanta(); }, 60000);
 loadCountdownImages();
 setInterval(loadCountdownImages, 15 * 60000);
 setInterval(rotateCountdown, CONFIG.countdownSeconds * 1000);
