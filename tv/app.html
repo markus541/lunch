@@ -107,6 +107,7 @@ body {
 /* Julenissen: video med gjennomsiktig bakgrunn oppå lysbildene, en gang i timen */
 .santa { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: center bottom; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 0.5s ease; }
 .santa.on { opacity: 1; }
+.santa-on .snow { display: none; }   /* snøen tar en pause mens nissen er på skjermen */
 .dots i { width: 0.6vw; height: 0.6vw; min-width: 6px; min-height: 6px; border-radius: 50%; background: #ffffff40; }
 .dots i.on { background: #fff; }
 
@@ -242,7 +243,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.13.3";
+const APP_VERSION = "1.13.4";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -491,7 +492,11 @@ function showSlide() {
   [].forEach.call(SLIDES.dots.children, (d, j) => d.classList.toggle("on", j === SLIDES.k));
   const cur = list[SLIDES.k];
   const v = cur.querySelector("video");
-  const next = () => { SLIDES.k = (SLIDES.k + 1) % SLIDES.list.length; showSlide(); };
+  const next = () => {
+    SLIDES.k = (SLIDES.k + 1) % SLIDES.list.length;
+    if (SLIDES.k === 0) shuffleSlides(cur);   // ny tilfeldig rekkefølge for hver runde
+    showSlide();
+  };
   if (v) {
     v.onended = next;
     SLIDES.timer = setTimeout(next, 90000); // sikkerhetsnett for lange/ødelagte videoer
@@ -518,6 +523,14 @@ function mediaSlide(file) {
   return s;
 }
 
+// Tilfeldig rekkefølge (Fisher–Yates); unngår at forrige bilde kommer først igjen
+function shuffleSlides(last) {
+  const a = SLIDES.list;
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  if (last && a.length > 1 && a[0] === last) { const t = a[0]; a[0] = a[1]; a[1] = t; }
+}
 function loadSlides() {
   getListing("slides", CONFIG.slidesApi)
     .then(items => {
@@ -530,6 +543,7 @@ function loadSlides() {
       SLIDES.box.querySelectorAll(".slide").forEach(s => s.remove());
       SLIDES.list = files.map(mediaSlide);
       SLIDES.list.forEach(s => SLIDES.box.insertBefore(s, SLIDES.dots));
+      shuffleSlides(null);
       SLIDES.k = 0;
       buildDots();
       showSlide();
@@ -647,7 +661,7 @@ setInterval(loadCountdowns, 15 * 60000);
 // ---- Julenissen ----
 // Prøver video med gjennomsiktig bakgrunn (WebM). Viser TV-en den med svart bakgrunn,
 // brukes animert WebP i stedet (valget huskes på TV-en).
-const SANTA = { busy: false, lastHour: -1, mode: null, blob: null };
+const SANTA = { busy: false, lastHour: -1, mode: null, blob: null, videoBlob: null };
 try { SANTA.mode = localStorage.getItem("santaMode"); } catch (e) {}
 function santaSeason() {
   const now = new Date(), md = pad(now.getMonth() + 1) + "-" + pad(now.getDate());
@@ -656,7 +670,9 @@ function santaSeason() {
 function santaDone() {
   const v = document.getElementById("santaVid"), img = document.getElementById("santaImg");
   v.classList.remove("on"); img.classList.remove("on");
+  document.body.classList.remove("santa-on");
   setTimeout(() => {
+    if (v.src.indexOf("blob:") === 0) URL.revokeObjectURL(v.src);
     v.pause(); v.removeAttribute("src"); v.load();
     if (img.src.indexOf("blob:") === 0) URL.revokeObjectURL(img.src);
     img.removeAttribute("src");
@@ -666,7 +682,7 @@ function santaDone() {
 function santaWebp() {
   const img = document.getElementById("santaImg");
   const show = blob => {
-    img.onload = () => { img.classList.add("on"); setTimeout(santaDone, CONFIG.santaSeconds * 1000); };
+    img.onload = () => { document.body.classList.add("santa-on"); img.classList.add("on"); setTimeout(santaDone, CONFIG.santaSeconds * 1000); };
     img.src = URL.createObjectURL(blob);   // ny adresse hver gang = animasjonen starter fra begynnelsen
   };
   if (SANTA.blob) return show(SANTA.blob);
@@ -687,12 +703,17 @@ function santaWebm() {
       const ctx = c.getContext("2d"); ctx.drawImage(v, 0, 0, 32, 18);
       alphaOk = ctx.getImageData(31, 0, 1, 1).data[3] < 128;
     } catch (e) {}
-    if (alphaOk) { santaUse("webm"); v.classList.add("on"); }
+    if (alphaOk) { santaUse("webm"); document.body.classList.add("santa-on"); v.classList.add("on"); }
     else { v.onended = null; v.pause(); v.removeAttribute("src"); v.load(); santaUse("webp"); santaWebp(); }
   };
-  v.src = CONFIG.santaWebm;
-  v.currentTime = 0;
-  v.play().catch(() => { santaUse("webp"); santaWebp(); });
+  // Hele videoen lastes ned først, så avspillingen ikke stopper opp for å vente på nettet
+  const start = blob => {
+    v.src = URL.createObjectURL(blob);
+    v.play().catch(() => { santaUse("webp"); santaWebp(); });
+  };
+  if (SANTA.videoBlob) return start(SANTA.videoBlob);
+  fetch(CONFIG.santaWebm).then(r => r.blob()).then(b => { SANTA.videoBlob = b; start(b); })
+    .catch(() => { SANTA.busy = false; });
 }
 function santaUse(mode) { SANTA.mode = mode; try { localStorage.setItem("santaMode", mode); } catch (e) {} }
 function playSanta() {
