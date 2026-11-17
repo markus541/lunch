@@ -276,7 +276,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.14.1";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
@@ -324,6 +324,9 @@ const CONFIG = {
   // Møter fra romkalenderne i M365 (via egen server-tjeneste)
   meetingsUrl: "https://gullkort.vercel.app/api/meetings",
   meetingSeconds: 15,          // bytt møterom hvert 15. sekund når flere har møter
+  welcomeSeconds: 10,          // bytt mellom velkomster hvert 10. sekund når flere starter samtidig
+  welcomeBeforeMinutes: 15,    // velkomst fra 15 min før møtet …
+  welcomeAfterMinutes: 5,      // … til 5 min etter start
   meetingsRefreshMinutes: 2
 };
 
@@ -700,19 +703,36 @@ function renderSnow() {
 }
 
 // ---- Møter: neste møte per møterom ----
-const MEET = { list: [], k: 0, loaded: false };
+// Tre faser per møte: «Møte» (senere i dag) → «Neste møte» (velkomst, 15 min før til 5 min etter start)
+// → «Pågår». Velkomster går foran alt annet; ellers roterer boksen mellom rommene.
+// Interne møter (uten eksterne gjester) vises ikke.
+const MEET = { list: [], k: 0, loaded: false, switched: 0, mode: "" };
 const hm = d => pad(d.getHours()) + ":" + pad(d.getMinutes());
 function joinNames(a) {
   if (a.length > 3) a = a.slice(0, 2).concat([(a.length - 2) + " til"]);
   return a.length < 2 ? (a[0] || "") : a.slice(0, -1).join(", ") + " og " + a[a.length - 1];
 }
+function meetPhase(m, now) {
+  if (now < m.s.getTime() - CONFIG.welcomeBeforeMinutes * 60000) return "later";
+  if (now < m.s.getTime() + CONFIG.welcomeAfterMinutes * 60000) return "welcome";
+  return "ongoing";
+}
 function meetingsToShow() {
-  const now = Date.now(), seen = {};
+  const now = Date.now(), byRoom = {};
   const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
-  return MEET.list.map(m => Object.assign({}, m, { s: new Date(m.start), e: new Date(m.end) }))
+  MEET.list.filter(m => !m.internal)
+    .map(m => Object.assign({}, m, { s: new Date(m.start), e: new Date(m.end) }))
     .filter(m => m.e.getTime() > now && m.s <= endOfDay)
     .sort((a, b) => a.s - b.s)
-    .filter(m => { if (seen[m.room]) return false; seen[m.room] = 1; return true; });
+    .forEach(m => {
+      m.phase = meetPhase(m, now);
+      const cur = byRoom[m.room];
+      // Ett møte per rom: det som er i velkomstfasen, ellers det første
+      if (!cur || (m.phase === "welcome" && cur.phase !== "welcome")) byRoom[m.room] = m;
+    });
+  const all = Object.keys(byRoom).map(r => byRoom[r]).sort((a, b) => a.s - b.s);
+  const welcome = all.filter(m => m.phase === "welcome");
+  return welcome.length ? welcome : all;
 }
 function renderMeeting() {
   const list = meetingsToShow();
@@ -729,30 +749,38 @@ function renderMeeting() {
     return;
   }
   const m = list[MEET.k % list.length], now = new Date();
-  const mins = Math.round((m.s - now) / 60000);
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  let when;
-  if (m.s <= now) when = "Pågår · til " + hm(m.e);
-  else if (mins <= 60) when = "Starter om " + Math.max(1, mins) + " min";
-  else if (m.s.toDateString() === now.toDateString()) when = "I dag kl. " + hm(m.s);
-  else if (m.s.toDateString() === tomorrow.toDateString()) when = "I morgen kl. " + hm(m.s);
-  else when = m.s.toLocaleDateString("nb-NO", { weekday: "long" }) + " kl. " + hm(m.s);
-  label.textContent = "Neste møte · " + m.room;
-  whenEl.textContent = when;
-  whenEl.classList.toggle("soon", m.s - now <= 15 * 60000);
-  const guests = m.guests || [];
-  // Én gjest: «Velkommen, Ola!» – flere gjester: «Velkommen, Nogva!» med navnene under
-  const one = !m.internal && guests.length === 1;
-  title.textContent = m.internal ? "Internt møte"
-    : "Velkommen, " + (one ? guests[0] : (m.company || joinNames(guests))) + "!";
-  meta.textContent = (m.internal ? "Havnevik" : one || !guests.length ? m.company : joinNames(guests))
-    + " · " + hm(m.s) + "–" + hm(m.e);
+  const guests = m.guests || [], names = joinNames(guests);
+  const who = m.company || names;                       // firma, ev. navnene
+  const times = hm(m.s) + "–" + hm(m.e);
+  const withTimes = t => t ? t + " · " + times : times;
+  if (m.phase === "welcome") {
+    const mins = Math.ceil((m.s - now) / 60000);
+    const one = guests.length === 1;
+    label.textContent = "Neste møte · " + m.room;
+    whenEl.textContent = mins > 0 ? "Om " + mins + " min" : "Starter nå";
+    whenEl.classList.add("soon");
+    title.textContent = "Velkommen, " + (one ? guests[0] : who) + "!";
+    meta.textContent = withTimes(one ? m.company : (m.company ? names : ""));
+  } else {
+    const later = m.phase === "later";
+    label.textContent = later ? "Møte · " + m.room : m.room;
+    whenEl.textContent = later ? "Starter · " + hm(m.s) : "Pågår";
+    whenEl.classList.toggle("soon", later);
+    title.textContent = who;
+    meta.textContent = withTimes(m.company ? names : "");
+  }
   if (list.length > 1) list.forEach((x, j) => {
     const i = document.createElement("i"); if (j === MEET.k % list.length) i.className = "on"; dots.appendChild(i);
   });
 }
+// Sjekkes hvert sekund: velkomster byttes hvert 10. sekund, ellers hvert 15. sekund
 function rotateMeeting() {
-  if (meetingsToShow().length < 2) return;
+  const list = meetingsToShow();
+  const mode = list.length && list[0].phase === "welcome" ? "welcome" : "normal";
+  if (mode !== MEET.mode) { MEET.mode = mode; MEET.k = 0; MEET.switched = Date.now(); renderMeeting(); return; }
+  const secs = mode === "welcome" ? CONFIG.welcomeSeconds : CONFIG.meetingSeconds;
+  if (list.length < 2 || Date.now() - MEET.switched < secs * 1000) return;
+  MEET.switched = Date.now();
   const tile = document.getElementById("meet");
   tile.classList.add("fade");
   setTimeout(() => { MEET.k++; renderMeeting(); tile.classList.remove("fade"); }, 600);
@@ -777,7 +805,7 @@ setInterval(rotateGig, CONFIG.gigSeconds * 1000);
 setInterval(loadCountdowns, 15 * 60000);
 loadMeetings();
 setInterval(loadMeetings, CONFIG.meetingsRefreshMinutes * 60000);
-setInterval(rotateMeeting, CONFIG.meetingSeconds * 1000);
+setInterval(rotateMeeting, 1000);
 
 // ---- Julenissen ----
 // Prøver video med gjennomsiktig bakgrunn (WebM). Viser TV-en den med svart bakgrunn,
