@@ -110,6 +110,7 @@ body {
 .santa-on .snow { display: none; }   /* snøen tar en pause mens nissen er på skjermen */
 .dots i { width: 0.6vw; height: 0.6vw; min-width: 6px; min-height: 6px; border-radius: 50%; background: #ffffff40; }
 .dots i.on { background: #fff; }
+#dots { display: none; }   /* prikkene i lysbildeboksen er skjult (for mange bilder) */
 
 /* Lunsj */
 .lunch { grid-column: 1 / 3; grid-row: 5 / 7; }
@@ -289,7 +290,7 @@ body {
 
 <script>
 // ---- Innstillinger (endres her) ----
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.15.1";
 const CONFIG = {
   // Samme logikk som lunch_notify.py: hele uker siden mandag i uke 17, 2026
   lunchStart: "2026-04-20",
